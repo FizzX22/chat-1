@@ -102,26 +102,48 @@ end
 
 -- Handle chat commands with qbx_core integration
 AddEventHandler('chatMessage', function(source, author, message)
-    -- Only process commands
-    if message:sub(1, 1) ~= '/' then
-        return
-    end
+    if not message then return end
 
-    local args = string.split(message, ' ')
-    local command = args[1]:sub(2):lower()
-    
-    if not command or command == '' then
-        return
-    end
+    -- If it's a command (starts with '/'), try command execution
+    if message:sub(1, 1) == '/' then
+        local args = string.split(message, ' ')
+        local command = args[1]:sub(2):lower()
 
-    -- If qbx_core is available, let it handle command execution
-    if hasQbxCore() then
-        local executedCommand = exports['qbx_core']:ExecuteCommand(source, command, args)
-        if executedCommand then
+        if not command or command == '' then
+            return
+        end
+
+        -- If qbx_core is available, let it handle command execution
+        if hasQbxCore() then
+            local ok, executedCommand = pcall(function()
+                return exports['qbx_core']:ExecuteCommand(source, command, args)
+            end)
+            if ok and executedCommand then
+                CancelEvent()
+                return
+            end
+        end
+
+        -- Handle built-in chat commands (uak/luak) explicitly when typed
+        if command == 'uak' then
+            local msg = table.concat(args, ' ', 2)
+            sendGlobalChat(source, msg)
+            CancelEvent()
+            return
+        elseif command == 'luak' then
+            local msg = table.concat(args, ' ', 2)
+            sendLocalChat(source, msg)
             CancelEvent()
             return
         end
+
+        return
     end
+
+    -- Not a command: broadcast normal chat message to all clients
+    TriggerClientEvent('chat:addMessage', -1, {
+        args = { author, message }
+    })
 end)
 
 -- Refresh commands on resource start
