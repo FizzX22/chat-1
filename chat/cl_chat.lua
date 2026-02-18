@@ -2,6 +2,7 @@ local chatInputActive = false
 local chatInputActivating = false
 local chatHidden = true
 local chatLoaded = false
+local currentTheme = 'dark'
 
 RegisterNetEvent('chatMessage')
 RegisterNetEvent('chat:addTemplate')
@@ -10,6 +11,7 @@ RegisterNetEvent('chat:addSuggestion')
 RegisterNetEvent('chat:addSuggestions')
 RegisterNetEvent('chat:removeSuggestion')
 RegisterNetEvent('chat:clear')
+RegisterNetEvent('chat:setTheme')
 
 -- internal events
 RegisterNetEvent('__cfx_internal:serverPrint')
@@ -94,6 +96,17 @@ AddEventHandler('chat:clear', function(name)
   })
 end)
 
+-- Theme management event
+AddEventHandler('chat:setTheme', function(themeName)
+  if themeName then
+    currentTheme = themeName
+    SendNUIMessage({
+      type = 'CHAT_SET_THEME',
+      theme = themeName
+    })
+  end
+end)
+
 RegisterNUICallback('chatResult', function(data, cb)
   chatInputActive = false
   SetNuiFocus(false, false)
@@ -124,7 +137,7 @@ local function refreshCommands()
         if IsAceAllowed(('command.%s'):format(command.name)) then
             table.insert(suggestions, {
                 name = '/' .. command.name,
-                help = ''
+                help = command.help or ''
             })
         end
     end
@@ -160,11 +173,31 @@ local function refreshThemes()
   })
 end
 
+-- Check if qbx_core exists
+local function hasQbxCore()
+    return GetResourceState('qbx_core') == 'started'
+end
+
+-- Notify player when connecting
+local function notifyPlayer(message, type)
+    TriggerEvent('chat:addMessage', {
+        args = { "CHAT", message },
+        color = { 255, 255, 255 },
+        multiline = false,
+        template = '<div class="chat-message '..type..'"><div class="chat-message-body"><strong>{0}:</strong> {1}</div></div>'
+    })
+end
+
 AddEventHandler('onClientResourceStart', function(resName)
   Wait(500)
 
   refreshCommands()
   refreshThemes()
+  
+  -- Notify if qbx_core is loaded
+  if hasQbxCore() and resName == 'qbx_core' then
+    notifyPlayer('qbx_core integration enabled', 'system')
+  end
 end)
 
 AddEventHandler('onClientResourceStop', function(resName)
@@ -181,8 +214,26 @@ RegisterNUICallback('loaded', function(data, cb)
   refreshThemes()
 
   chatLoaded = true
+  
+  -- Print info message
+  notifyPlayer('Chat loaded and ready | Theme: '..currentTheme, 'system')
 
   cb('ok')
+end)
+
+-- Export function to change theme from other resources
+exports('setTheme', function(themeName)
+  if themeName then
+    TriggerEvent('chat:setTheme', themeName)
+  end
+end)
+
+-- Export function to add message from other resources
+exports('addMessage', function(author, message, type)
+  TriggerEvent('chat:addMessage', {
+    args = { author, message },
+    template = '<div class="chat-message '..(type or 'normal')..'"><div class="chat-message-body"><strong>{0}:</strong> {1}</div></div>'
+  })
 end)
 
 Citizen.CreateThread(function()

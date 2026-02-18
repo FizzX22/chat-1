@@ -3,6 +3,7 @@ window.APP = {
   name: 'app',
   data() {
     return {
+      currentTheme: 'dark',
       style: CONFIG.style,
       showInput: false,
       showWindow: false,
@@ -24,6 +25,7 @@ window.APP = {
   },
   mounted() {
     post('http://chat/loaded', JSON.stringify({}));
+    this.initializeTheme();
     this.listener = window.addEventListener('message', (event) => {
       const item = event.data || event.detail; //'detail' is for debuging via browsers
       if (this[item.type]) {
@@ -51,6 +53,40 @@ window.APP = {
     },
   },
   methods: {
+    initializeTheme() {
+      const savedTheme = localStorage.getItem('chatTheme') || 'dark';
+      if (CONFIG.themes && CONFIG.themes[savedTheme]) {
+        this.setTheme(savedTheme);
+      }
+    },
+    setTheme(themeName) {
+      if (!CONFIG.themes || !CONFIG.themes[themeName]) {
+        console.warn(`Theme '${themeName}' not found`);
+        return;
+      }
+      
+      this.currentTheme = themeName;
+      const theme = CONFIG.themes[themeName];
+      
+      // Apply CSS variables
+      const root = document.documentElement;
+      if (theme.style) {
+        Object.keys(theme.style).forEach(key => {
+          root.style.setProperty(key, theme.style[key]);
+        });
+      }
+      
+      localStorage.setItem('chatTheme', themeName);
+    },
+    cycleTheme() {
+      if (!CONFIG.themes) return;
+      
+      const themeNames = Object.keys(CONFIG.themes);
+      const currentIndex = themeNames.indexOf(this.currentTheme);
+      const nextIndex = (currentIndex + 1) % themeNames.length;
+      
+      this.setTheme(themeNames[nextIndex]);
+    },
     ON_SCREEN_STATE_CHANGE({ shouldHide }) {
       this.shouldHide = shouldHide;
     },
