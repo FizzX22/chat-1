@@ -152,11 +152,48 @@ end
 
 -- Helper function to get player coordinates
 local function getPlayerCoords(playerId)
-    local ped = GetPlayerPed(playerId)
+    local pid = tonumber(playerId) or playerId
+    local ped = GetPlayerPed(pid)
     if ped == 0 then
         return nil
     end
     return GetEntityCoords(ped)
+end
+
+-- Helper to send local chat (used by command and server event)
+local function sendLocalChat(fromSource, message)
+    local playerName, playerId, hasCharInfo = getPlayerCharacterInfo(fromSource)
+    local playerCoords = getPlayerCoords(fromSource)
+    local proximityRange = 100.0 -- 100 meters proximity
+
+    local players = GetPlayers()
+    for _, target in ipairs(players) do
+        local targetCoords = getPlayerCoords(tonumber(target))
+        local distance = getDistance(playerCoords, targetCoords)
+
+        if distance <= proximityRange then
+            TriggerClientEvent('chat:addMessage', tonumber(target), {
+                args = { playerName, '[LOCAL] ' .. message, playerId },
+                template = '<div class="chat-message advert"><div class="chat-message-body"><strong style="color: #74c0fc;">{0}</strong> <span style="color: #a0a0a0;">(ID: {2})</span> <strong>»</strong> <span style="color: #c0d9ff;">{1}</span></div></div>'
+            })
+        end
+    end
+
+    print(('^2[Local Chat] %s (ID: %d): %s^7'):format(playerName, playerId, message))
+end
+
+-- Helper to send global chat (used by command and server event)
+local function sendGlobalChat(fromSource, message)
+    local playerName, playerId, hasCharInfo = getPlayerCharacterInfo(fromSource)
+    local players = GetPlayers()
+    for _, target in ipairs(players) do
+        TriggerClientEvent('chat:addMessage', tonumber(target), {
+            args = { playerName, '[GLOBAL] ' .. message, playerId },
+            template = '<div class="chat-message"><div class="chat-message-body"><strong style="color: #4dabf7;">{0}</strong> <span style="color: #a0a0a0;">(ID: {2})</span> <strong>»</strong> <span style="color: #b8ccff;">{1}</span></div></div>'
+        })
+    end
+
+    print(('^3[Global Chat] %s (ID: %d): %s^7'):format(playerName, playerId, message))
 end
 
 -- Helper function to calculate distance between two coordinates
@@ -172,15 +209,9 @@ end
 
 -- Local chat command - /luak (Local UAK)
 RegisterCommand('luak', function(source, args, rawCommand)
-    if not hasQbxCore() then
-        TriggerClientEvent('chat:addMessage', source, {
-            args = { 'System', 'qbx_core is required for this command' },
-            template = '<div class="chat-message error"><div class="chat-message-body"><strong>{0}:</strong> {1}</div></div>'
-        })
-        return
-    end
-
-    if #args == 0 then
+    -- forward to the shared local chat sender (works whether qbx_core is present or not)
+    local message = table.concat(args, ' ')
+    if message == nil or message == '' then
         TriggerClientEvent('chat:addMessage', source, {
             args = { 'System', 'Usage: /luak [message]' },
             template = '<div class="chat-message warning"><div class="chat-message-body"><strong>{0}:</strong> {1}</div></div>'
@@ -188,42 +219,25 @@ RegisterCommand('luak', function(source, args, rawCommand)
         return
     end
 
-    local playerName, playerId, hasCharInfo = getPlayerCharacterInfo(source)
-    local playerCoords = getPlayerCoords(source)
-    local message = table.concat(args, ' ')
-    local proximityRange = 100.0 -- 100 meters proximity
-    
-    -- Format message with player info
-    local formattedMessage = playerName .. ' (ID: ' .. playerId .. '): ' .. message
-    
-    -- Send to nearby players
-    local players = GetPlayers()
-    for _, target in ipairs(players) do
-        local targetCoords = getPlayerCoords(tonumber(target))
-        local distance = getDistance(playerCoords, targetCoords)
-        
-        if distance <= proximityRange then
-            TriggerClientEvent('chat:addMessage', tonumber(target), {
-                args = { playerName, '[LOCAL] ' .. message, playerId },
-                template = '<div class="chat-message advert"><div class="chat-message-body"><strong style="color: #74c0fc;">{0}</strong> <span style="color: #a0a0a0;">(ID: {2})</span> <strong>»</strong> <span style="color: #c0d9ff;">{1}</span></div></div>'
-            })
-        end
-    end
-
-    print(('^2[Local Chat] %s (ID: %d): %s^7'):format(playerName, playerId, message))
+    sendLocalChat(source, message)
 end, false)
+
+-- Server events so client-side command forwards work reliably
+AddEventHandler('chat:server_luak', function(message)
+    local _source = source
+    sendLocalChat(_source, message)
+end)
+
+AddEventHandler('chat:server_uak', function(message)
+    local _source = source
+    sendGlobalChat(_source, message)
+end)
 
 -- Global chat command - /uak (Universal UAK)
 RegisterCommand('uak', function(source, args, rawCommand)
-    if not hasQbxCore() then
-        TriggerClientEvent('chat:addMessage', source, {
-            args = { 'System', 'qbx_core is required for this command' },
-            template = '<div class="chat-message error"><div class="chat-message-body"><strong>{0}:</strong> {1}</div></div>'
-        })
-        return
-    end
-
-    if #args == 0 then
+    -- forward to the shared global chat sender (works whether qbx_core is present or not)
+    local message = table.concat(args, ' ')
+    if message == nil or message == '' then
         TriggerClientEvent('chat:addMessage', source, {
             args = { 'System', 'Usage: /uak [message]' },
             template = '<div class="chat-message warning"><div class="chat-message-body"><strong>{0}:</strong> {1}</div></div>'
@@ -231,19 +245,7 @@ RegisterCommand('uak', function(source, args, rawCommand)
         return
     end
 
-    local playerName, playerId, hasCharInfo = getPlayerCharacterInfo(source)
-    local message = table.concat(args, ' ')
-    
-    -- Send to all players
-    local players = GetPlayers()
-    for _, target in ipairs(players) do
-        TriggerClientEvent('chat:addMessage', tonumber(target), {
-            args = { playerName, '[GLOBAL] ' .. message, playerId },
-            template = '<div class="chat-message"><div class="chat-message-body"><strong style="color: #4dabf7;">{0}</strong> <span style="color: #a0a0a0;">(ID: {2})</span> <strong>»</strong> <span style="color: #b8ccff;">{1}</span></div></div>'
-        })
-    end
-
-    print(('^3[Global Chat] %s (ID: %d): %s^7'):format(playerName, playerId, message))
+    sendGlobalChat(source, message)
 end, false)
 
 -- Helper function for string splitting

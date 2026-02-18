@@ -127,6 +127,17 @@ RegisterNUICallback('chatResult', function(data, cb)
   cb('ok')
 end)
 
+-- Client-side command forwards so server receives /luak and /uak reliably
+RegisterCommand('luak', function(source, args, raw)
+    local msg = table.concat(args, ' ')
+    TriggerServerEvent('chat:server_luak', msg)
+end, false)
+
+RegisterCommand('uak', function(source, args, raw)
+    local msg = table.concat(args, ' ')
+    TriggerServerEvent('chat:server_uak', msg)
+end, false)
+
 local function refreshCommands()
   if GetRegisteredCommands then
     local registeredCommands = GetRegisteredCommands()
