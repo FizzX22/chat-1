@@ -6,6 +6,8 @@ RegisterServerEvent('chat:removeSuggestion')
 RegisterServerEvent('_chat:messageEntered')
 RegisterServerEvent('chat:clear')
 RegisterServerEvent('__cfx_internal:commandFallback')
+RegisterServerEvent('chat:server_luak')
+RegisterServerEvent('chat:server_uak')
 
 AddEventHandler('_chat:messageEntered', function(author, color, message)
     if not message or not author then
@@ -47,29 +49,39 @@ end
 
 -- command suggestions for clients (qbx_core compatible)
 local function refreshCommands(player)
+    if not player then return end
+    local pid = tonumber(player)
+    if not pid then return end
+
     if GetRegisteredCommands then
-        local registeredCommands = GetRegisteredCommands()
+        local ok, registeredCommands = pcall(GetRegisteredCommands)
+        if not ok or not registeredCommands then return end
+
         local suggestions = {}
 
         for _, command in ipairs(registeredCommands) do
-            -- Check qbx_core permissions first if available
+            local allowed = false
+
             if hasQbxCore() then
-                -- Using qbx_core permission system
-                if exports['qbx_core']:HasPermission(player, command.name) or 
-                   IsPlayerAceAllowed(player, ('command.%s'):format(command.name)) then
-                    table.insert(suggestions, {
-                        name = '/' .. command.name,
-                        help = command.help or ''
-                    })
+                local okperm, result = pcall(function()
+                    return exports['qbx_core']:HasPermission(pid, command.name)
+                end)
+                if okperm and result then
+                    allowed = true
+                else
+                    local okace, aceRes = pcall(IsPlayerAceAllowed, pid, ('command.%s'):format(command.name))
+                    if okace and aceRes then allowed = true end
                 end
             else
-                -- Fallback to standard ACE permissions
-                if IsPlayerAceAllowed(player, ('command.%s'):format(command.name)) then
-                    table.insert(suggestions, {
-                        name = '/' .. command.name,
-                        help = command.help or ''
-                    })
-                end
+                local okace, aceRes = pcall(IsPlayerAceAllowed, pid, ('command.%s'):format(command.name))
+                if okace and aceRes then allowed = true end
+            end
+
+            if allowed then
+                table.insert(suggestions, {
+                    name = '/' .. command.name,
+                    help = command.help or ''
+                })
             end
         end
 
@@ -84,7 +96,7 @@ local function refreshCommands(player)
             help = 'Global chat - all players can see'
         })
 
-        TriggerClientEvent('chat:addSuggestions', player, suggestions)
+        TriggerClientEvent('chat:addSuggestions', pid, suggestions)
     end
 end
 
@@ -164,36 +176,40 @@ end
 local function sendLocalChat(fromSource, message)
     local playerName, playerId, hasCharInfo = getPlayerCharacterInfo(fromSource)
     local playerCoords = getPlayerCoords(fromSource)
+    playerId = playerId or fromSource
     local proximityRange = 100.0 -- 100 meters proximity
 
     local players = GetPlayers()
     for _, target in ipairs(players) do
-        local targetCoords = getPlayerCoords(tonumber(target))
+        local tid = tonumber(target)
+        local targetCoords = getPlayerCoords(tid)
         local distance = getDistance(playerCoords, targetCoords)
 
         if distance <= proximityRange then
-            TriggerClientEvent('chat:addMessage', tonumber(target), {
+            TriggerClientEvent('chat:addMessage', tid, {
                 args = { playerName, '[LOCAL] ' .. message, playerId },
                 template = '<div class="chat-message advert"><div class="chat-message-body"><strong style="color: #74c0fc;">{0}</strong> <span style="color: #a0a0a0;">(ID: {2})</span> <strong>»</strong> <span style="color: #c0d9ff;">{1}</span></div></div>'
             })
         end
     end
 
-    print(('^2[Local Chat] %s (ID: %d): %s^7'):format(playerName, playerId, message))
+    print(('^2[Local Chat] %s (ID: %s): %s^7'):format(tostring(playerName), tostring(playerId), tostring(message)))
 end
 
 -- Helper to send global chat (used by command and server event)
 local function sendGlobalChat(fromSource, message)
     local playerName, playerId, hasCharInfo = getPlayerCharacterInfo(fromSource)
+    playerId = playerId or fromSource
     local players = GetPlayers()
     for _, target in ipairs(players) do
-        TriggerClientEvent('chat:addMessage', tonumber(target), {
+        local tid = tonumber(target)
+        TriggerClientEvent('chat:addMessage', tid, {
             args = { playerName, '[GLOBAL] ' .. message, playerId },
             template = '<div class="chat-message"><div class="chat-message-body"><strong style="color: #4dabf7;">{0}</strong> <span style="color: #a0a0a0;">(ID: {2})</span> <strong>»</strong> <span style="color: #b8ccff;">{1}</span></div></div>'
         })
     end
 
-    print(('^3[Global Chat] %s (ID: %d): %s^7'):format(playerName, playerId, message))
+    print(('^3[Global Chat] %s (ID: %s): %s^7'):format(tostring(playerName), tostring(playerId), tostring(message)))
 end
 
 -- Helper function to calculate distance between two coordinates
@@ -232,6 +248,10 @@ AddEventHandler('chat:server_uak', function(message)
     local _source = source
     sendGlobalChat(_source, message)
 end)
+
+-- Ensure remote events are registered for client forwards (defensive)
+RegisterServerEvent('chat:server_luak')
+RegisterServerEvent('chat:server_uak')
 
 -- Global chat command - /uak (Universal UAK)
 RegisterCommand('uak', function(source, args, rawCommand)
