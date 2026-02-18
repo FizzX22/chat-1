@@ -96,40 +96,28 @@
   <!-- Main Entry -->
   <script type="text/javascript">
   window.post = (url, data) => {
-    // Extract callback name from URL path
-    const callbackPath = url.split('/').pop(); // gets 'loaded' or 'chatResult'
+    // Extract callback name from URL path (loaded or chatResult)
+    const callbackPath = url.split('/').pop();
     
     try {
-      const body = JSON.parse(data || '{}');
-      
-      // Primary: Try postMessage first
-      try {
-        window.postMessage({ action: callbackPath, data: body });
-        console.log(`[Chat] ${callbackPath} sent via postMessage`);
-        return;
-      } catch (e) {
-        console.warn(`[Chat] postMessage failed: ${e.message}`);
-      }
-      
-      // Fallback: Try HTTP to the resource with its name
+      // Use HTTP to the proper NUI endpoint - this is the ONLY reliable way
       const endpoint = `https://cfx-nui-chat/${callbackPath}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
       
       fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: data,
-        signal: controller.signal
-      }).then(r => {
-        clearTimeout(timeout);
-        console.log(`[Chat] ${callbackPath} reached via fetch:`, r.status);
-      }).catch(e => {
-        clearTimeout(timeout);
-        console.error(`[Chat] ${callbackPath} fetch failed:`, e.message);
+        body: data || '{}'
+      }).then(response => {
+        if (response.ok) {
+          console.log(`[Chat] ${callbackPath} succeeded`);
+        } else {
+          console.warn(`[Chat] ${callbackPath} returned ${response.status}`);
+        }
+      }).catch(error => {
+        console.error(`[Chat] ${callbackPath} failed:`, error.message);
       });
     } catch (e) {
-      console.error('[Chat] Post error:', e);
+      console.error('[Chat] post() error:', e);
     }
   }
 

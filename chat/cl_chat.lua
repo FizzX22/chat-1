@@ -139,20 +139,6 @@ RegisterNUICallback('chatResult', function(data, cb)
   cb('ok')
 end)
 
--- Alternative handler for postMessage events (backup communication method)
-RegisterNUICallback('message', function(data, cb)
-  if data.action == 'loaded' then
-    print('[chat] Chat UI loaded event detected')
-    TriggerServerEvent('chat:init')
-    chatLoaded = true
-  elseif data.action == 'chatResult' then
-    print('[chat] Chat close event detected via postMessage')
-    chatInputActive = false
-    SetNuiFocus(false, false)
-  end
-  cb('ok')
-end)
-
 -- Client-side command forwards so server receives /luak and /uak reliably
 RegisterCommand('luak', function(source, args, raw)
     local msg = table.concat(args, ' ')
