@@ -155,13 +155,17 @@ RegisterNUICallback('message', function(data, cb)
     TriggerServerEvent('chat:init')
     chatLoaded = true
     chatInputActive = false
+    chatFocusReleaseTimeout = 0
     SetNuiFocus(false, false)
   elseif data.action == 'chatResult' then
     print('[chat] NUI chatResult event: canceled=' .. tostring(data.data.canceled))
-    chatInputActive = false
-    chatInputActivating = false
-    chatFocusReleaseTimeout = 0
-    SetNuiFocus(false, false)
+    -- Only clear focus if it's a message result, not a cancel
+    if not data.data.canceled then
+      chatInputActive = false
+      chatInputActivating = false
+      chatFocusReleaseTimeout = 0
+      SetNuiFocus(false, false)
+    end
   end
   cb('ok')
 end)
@@ -293,7 +297,7 @@ Citizen.CreateThread(function()
   while true do
     Wait(3)
 
-    -- Watchdog timer: Force release focus if stuck for too long
+    -- Watchdog timer: Force release focus if stuck for too long (30 seconds)
     if chatInputActive and chatFocusReleaseTimeout > 0 then
       chatFocusReleaseTimeout = chatFocusReleaseTimeout - 1
       if chatFocusReleaseTimeout <= 0 then
@@ -309,7 +313,7 @@ Citizen.CreateThread(function()
       if IsControlPressed(0, 245) --[[ INPUT_MP_TEXT_CHAT_ALL ]] then
         chatInputActive = true
         chatInputActivating = true
-        chatFocusReleaseTimeout = 100  -- 3 second timeout (100 iterations * 3ms + NUI processing)
+        chatFocusReleaseTimeout = 10000  -- 30 second timeout (10000 iterations * 3ms)
 
         SendNUIMessage({
           type = 'ON_OPEN'
@@ -330,6 +334,29 @@ Citizen.CreateThread(function()
       chatInputActive = false
       chatFocusReleaseTimeout = 0
       SetNuiFocus(false, false)
+    end
+
+    -- Block all keyboard inputs while chat is active to prevent triggering other menus
+    if chatInputActive then
+      -- Block number keys (GTA menus)
+      for i = 0, 9 do
+        DisableControlAction(0, 48 + i, true)
+      end
+      -- Block common menu keys
+      DisableControlAction(0, 27, true)   -- Phone
+      DisableControlAction(0, 29, true)   -- Weapon wheel
+      DisableControlAction(0, 37, true)   -- Craft menu
+      DisableControlAction(0, 47, true)   -- G
+      DisableControlAction(0, 61, true)   -- Arrow keys up
+      DisableControlAction(0, 62, true)   -- Arrow keys down
+      DisableControlAction(0, 63, true)   -- Arrow keys left
+      DisableControlAction(0, 64, true)   -- Arrow keys right
+      DisableControlAction(0, 99, true)   -- LCtrl
+      DisableControlAction(0, 99, true)   -- RCtrl
+      DisableControlAction(0, 177, true)  -- VEH_SELECT_NEXT_WEAPON
+      DisableControlAction(0, 176, true)  -- VEH_SELECT_PREV_WEAPON
+      -- Most importantly, block all number pad keys that might open menus
+      DisableControlAction(0, 270, true)
     end
 
     if chatLoaded then
