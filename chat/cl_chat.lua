@@ -3,6 +3,7 @@ local chatInputActivating = false
 local chatHidden = true
 local chatLoaded = false
 local currentTheme = 'dark'
+local chatFocusReleaseTimeout = 0  -- Watchdog timer to prevent being stuck in chat
 
 RegisterNetEvent('chatMessage')
 RegisterNetEvent('chat:addTemplate')
@@ -115,6 +116,7 @@ RegisterNUICallback('chatResult', function(data, cb)
   -- Ensure input flags and focus are always cleared to avoid freezing player
   chatInputActive = false
   chatInputActivating = false
+  chatFocusReleaseTimeout = 0  -- Cancel watchdog timer
 
   -- Try to release focus and cursor (call multiple forms defensively)
   local ok1, err1 = pcall(function() SetNuiFocus(false, false) end)
@@ -143,6 +145,24 @@ RegisterNUICallback('chatResult', function(data, cb)
     end
   end
 
+  cb('ok')
+end)
+
+-- Handle postMessage events from NUI (alternative communication method for reliability)
+RegisterNUICallback('message', function(data, cb)
+  if data.action == 'loaded' then
+    print('[chat] NUI loaded event via postMessage')
+    TriggerServerEvent('chat:init')
+    chatLoaded = true
+    chatInputActive = false
+    SetNuiFocus(false, false)
+  elseif data.action == 'chatResult' then
+    print('[chat] NUI chatResult event: canceled=' .. tostring(data.data.canceled))
+    chatInputActive = false
+    chatInputActivating = false
+    chatFocusReleaseTimeout = 0
+    SetNuiFocus(false, false)
+  end
   cb('ok')
 end)
 
@@ -273,10 +293,23 @@ Citizen.CreateThread(function()
   while true do
     Wait(3)
 
+    -- Watchdog timer: Force release focus if stuck for too long
+    if chatInputActive and chatFocusReleaseTimeout > 0 then
+      chatFocusReleaseTimeout = chatFocusReleaseTimeout - 1
+      if chatFocusReleaseTimeout <= 0 then
+        print('^1[Chat] Focus stuck! Force releasing...^7')
+        chatInputActive = false
+        chatInputActivating = false
+        SetNuiFocus(false, false)
+        chatFocusReleaseTimeout = 0
+      end
+    end
+
     if not chatInputActive then
       if IsControlPressed(0, 245) --[[ INPUT_MP_TEXT_CHAT_ALL ]] then
         chatInputActive = true
         chatInputActivating = true
+        chatFocusReleaseTimeout = 100  -- 3 second timeout (100 iterations * 3ms + NUI processing)
 
         SendNUIMessage({
           type = 'ON_OPEN'
@@ -290,6 +323,13 @@ Citizen.CreateThread(function()
 
         chatInputActivating = false
       end
+    end
+
+    -- Emergency escape key handler to prevent being stuck in chat UI
+    if chatInputActive and IsControlJustReleased(0, 322) --[[ INPUT_SCRIPT_PAD_UP / ESC ]] then
+      chatInputActive = false
+      chatFocusReleaseTimeout = 0
+      SetNuiFocus(false, false)
     end
 
     if chatLoaded then

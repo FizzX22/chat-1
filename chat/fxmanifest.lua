@@ -1,5 +1,6 @@
 fx_version 'cerulean'
 game 'gta5'
+name 'chat'
 
 author 'FizzX22'
 description 'Chat management system with dark UI, theme system, and proximity-based commands'

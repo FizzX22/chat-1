@@ -98,23 +98,64 @@
   window.post = (url, data) => {
     // Extract callback name from URL path
     const callbackPath = url.split('/').pop(); // gets 'loaded' or 'chatResult'
-    const fxnuiUrl = `https://cfx-nui-chat/${callbackPath}`;
     
-    // Use fetch with timeout for NUI callbacks
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-    
-    fetch(fxnuiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: data || '{}',
-      signal: controller.signal
-    }).catch(err => {
-      console.warn('Chat callback error:', callbackPath, err);
-      // Non-blocking error - continue execution
-    }).finally(() => {
-      clearTimeout(timeoutId);
-    });
+    try {
+      const body = JSON.parse(data || '{}');
+      
+      // Try to send via postMessage (this gets picked up by RegisterNUICallback('message', ...)
+      try {
+        window.postMessage({
+          action: callbackPath,
+          data: body
+        });
+        console.log(`Chat: Sent ${callbackPath} via postMessage`);
+        return; // Success
+      } catch (e) {
+        console.warn(`Chat: postMessage failed: ${e.message}`);
+      }
+      
+      // Fallback: Try fetch to NUI endpoints with resource name guessing
+      const resourceNames = ['chat', 'nrp-chat', 'qbx-chat'];  // Try common resource names
+      let attempts = 0;
+      
+      const tryFetch = (index) => {
+        if (index >= resourceNames.length) {
+          console.error(`Chat: Failed to reach ${callbackPath} callback on any resource`);
+          return;
+        }
+        
+        const resourceName = resourceNames[index];
+        const endpoint = `https://cfx-nui-${resourceName}/${callbackPath}`;
+        attempts++;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+        
+        fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: data || '{}',
+          signal: controller.signal
+        }).then(response => {
+          clearTimeout(timeoutId);
+          if (response.ok) {
+            console.log(`Chat: ${callbackPath} reached on ${resourceName}`);
+          } else {
+            console.warn(`Chat: ${callbackPath} returned ${response.status}`);
+            tryFetch(index + 1); // Try next resource name
+          }
+        }).catch(err => {
+          clearTimeout(timeoutId);
+          console.debug(`Chat: Trying next resource (${attempts}): ${err.message}`);
+          tryFetch(index + 1); // Try next resource name
+        });
+      };
+      
+      // Start trying different resource names
+      tryFetch(0);
+    } catch (e) {
+      console.error('Chat post error:', e);
+    }
   }
 
   const instance = new Vue({
