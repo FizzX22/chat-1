@@ -3,7 +3,6 @@ local chatInputActivating = false
 local chatHidden = true
 local chatLoaded = false
 local currentTheme = 'dark'
-local chatFocusReleaseTimeout = 0  -- Watchdog timer to prevent being stuck in chat
 
 RegisterNetEvent('chatMessage')
 RegisterNetEvent('chat:addTemplate')
@@ -109,29 +108,18 @@ AddEventHandler('chat:setTheme', function(themeName)
 end)
 
 RegisterNUICallback('chatResult', function(data, cb)
-  -- Debug: indicate we received chatResult
-  print('[chat] RegisterNUICallback chatResult received, canceled=' .. tostring(data.canceled))
-  TriggerEvent('chat:addMessage', { args = { 'CHAT', 'chatResult received: ' .. tostring(data.canceled) } })
-
-  -- Ensure input flags and focus are always cleared to avoid freezing player
+  print('[chat] chatResult received, message: ' .. tostring(data.message) .. ', canceled: ' .. tostring(data.canceled))
+  
+  -- Immediately release input focus
   chatInputActive = false
-  chatInputActivating = false
-  chatFocusReleaseTimeout = 0  -- Cancel watchdog timer
-
-  -- Try to release focus and cursor (call multiple forms defensively)
-  local ok1, err1 = pcall(function() SetNuiFocus(false, false) end)
-  local ok2, err2 = pcall(function() SetNuiFocus(false) end)
-  print('[chat] SetNuiFocus results: ' .. tostring(ok1) .. ', ' .. tostring(ok2))
-  TriggerEvent('chat:addMessage', { args = { 'CHAT', 'SetNuiFocus results: ' .. tostring(ok1) .. ', ' .. tostring(ok2) } })
+  SetNuiFocus(false, false)
 
   if not data.canceled then
     local id = PlayerId()
-
-    --deprecated
     local r, g, b = 0, 0x99, 255
 
     if data.message and data.message:sub(1, 1) == '/' then
-      -- protect ExecuteCommand from throwing and ensure focus released
+      -- Execute command
       local ok, err = pcall(function()
         ExecuteCommand(data.message:sub(2))
       end)
@@ -141,6 +129,7 @@ RegisterNUICallback('chatResult', function(data, cb)
         })
       end
     else
+      -- Send message to server
       TriggerServerEvent('_chat:messageEntered', GetPlayerName(id), { r, g, b }, data.message)
     end
   end
@@ -151,20 +140,21 @@ end)
 -- Handle postMessage events from NUI (alternative communication method for reliability)
 RegisterNUICallback('message', function(data, cb)
   if data.action == 'loaded' then
-    print('[chat] NUI loaded event via postMessage')
+    print('[chat] NUI loaded via postMessage')
     TriggerServerEvent('chat:init')
     chatLoaded = true
-    chatInputActive = false
-    chatFocusReleaseTimeout = 0
-    SetNuiFocus(false, false)
   elseif data.action == 'chatResult' then
-    print('[chat] NUI chatResult event: canceled=' .. tostring(data.data.canceled))
-    -- Only clear focus if it's a message result, not a cancel
-    if not data.data.canceled then
-      chatInputActive = false
-      chatInputActivating = false
-      chatFocusReleaseTimeout = 0
-      SetNuiFocus(false, false)
+    print('[chat] chatResult via postMessage - delegating to chatResult handler')
+    -- Delegate to main chatResult handler
+    chatInputActive = false
+    SetNuiFocus(false, false)
+    if data.data and not data.data.canceled and data.data.message then
+      local id = PlayerId()
+      if data.data.message:sub(1, 1) == '/' then
+        ExecuteCommand(data.data.message:sub(2))
+      else
+        TriggerServerEvent('_chat:messageEntered', GetPlayerName(id), { 0, 0x99, 255 }, data.data.message)
+      end
     end
   end
   cb('ok')
@@ -297,23 +287,10 @@ Citizen.CreateThread(function()
   while true do
     Wait(3)
 
-    -- Watchdog timer: Force release focus if stuck for too long (30 seconds)
-    if chatInputActive and chatFocusReleaseTimeout > 0 then
-      chatFocusReleaseTimeout = chatFocusReleaseTimeout - 1
-      if chatFocusReleaseTimeout <= 0 then
-        print('^1[Chat] Focus stuck! Force releasing...^7')
-        chatInputActive = false
-        chatInputActivating = false
-        SetNuiFocus(false, false)
-        chatFocusReleaseTimeout = 0
-      end
-    end
-
     if not chatInputActive then
       if IsControlPressed(0, 245) --[[ INPUT_MP_TEXT_CHAT_ALL ]] then
         chatInputActive = true
         chatInputActivating = true
-        chatFocusReleaseTimeout = 10000  -- 30 second timeout (10000 iterations * 3ms)
 
         SendNUIMessage({
           type = 'ON_OPEN'
@@ -327,36 +304,6 @@ Citizen.CreateThread(function()
 
         chatInputActivating = false
       end
-    end
-
-    -- Emergency escape key handler to prevent being stuck in chat UI
-    if chatInputActive and IsControlJustReleased(0, 322) --[[ INPUT_SCRIPT_PAD_UP / ESC ]] then
-      chatInputActive = false
-      chatFocusReleaseTimeout = 0
-      SetNuiFocus(false, false)
-    end
-
-    -- Block all keyboard inputs while chat is active to prevent triggering other menus
-    if chatInputActive then
-      -- Block number keys (GTA menus)
-      for i = 0, 9 do
-        DisableControlAction(0, 48 + i, true)
-      end
-      -- Block common menu keys
-      DisableControlAction(0, 27, true)   -- Phone
-      DisableControlAction(0, 29, true)   -- Weapon wheel
-      DisableControlAction(0, 37, true)   -- Craft menu
-      DisableControlAction(0, 47, true)   -- G
-      DisableControlAction(0, 61, true)   -- Arrow keys up
-      DisableControlAction(0, 62, true)   -- Arrow keys down
-      DisableControlAction(0, 63, true)   -- Arrow keys left
-      DisableControlAction(0, 64, true)   -- Arrow keys right
-      DisableControlAction(0, 99, true)   -- LCtrl
-      DisableControlAction(0, 99, true)   -- RCtrl
-      DisableControlAction(0, 177, true)  -- VEH_SELECT_NEXT_WEAPON
-      DisableControlAction(0, 176, true)  -- VEH_SELECT_PREV_WEAPON
-      -- Most importantly, block all number pad keys that might open menus
-      DisableControlAction(0, 270, true)
     end
 
     if chatLoaded then
