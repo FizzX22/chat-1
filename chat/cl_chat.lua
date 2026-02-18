@@ -259,40 +259,30 @@ Citizen.CreateThread(function()
   SetNuiFocus(false, false)
 
   while true do
-    Wait(3)
+    Wait(0)
 
-    if not chatInputActive then
-      if IsControlPressed(0, 245) --[[ INPUT_MP_TEXT_CHAT_ALL ]] then
-        chatInputActive = true
-        chatInputActivating = true
-
-        SendNUIMessage({
-          type = 'ON_OPEN'
-        })
-      end
+    -- Open chat when F8 is pressed
+    if not chatInputActive and IsControlJustReleased(0, 245) then
+      chatInputActive = true
+      SendNUIMessage({ type = 'ON_OPEN' })
+      SetNuiFocus(true, true)  -- Give focus with keyboard input enabled
+      Wait(100)  -- Wait for NUI to initialize
     end
 
-    if chatInputActivating then
-      if not IsControlPressed(0, 245) then
-        SetNuiFocus(true)
-
-        chatInputActivating = false
-      end
+    -- Close chat on ESC key
+    if chatInputActive and IsControlJustReleased(0, 322) then
+      chatInputActive = false
+      SetNuiFocus(false, false)
     end
 
+    -- Hide chat when player dies, enters vehicle, etc
     if chatLoaded then
-      local shouldBeHidden = false
-
-      if IsScreenFadedOut() or IsPauseMenuActive() then
-        shouldBeHidden = true
-      end
-
-      if (shouldBeHidden and not chatHidden) or (not shouldBeHidden and chatHidden) then
-        chatHidden = shouldBeHidden
-
+      local shouldHide = IsScreenFadedOut() or IsPauseMenuActive()
+      if shouldHide ~= chatHidden then
+        chatHidden = shouldHide
         SendNUIMessage({
           type = 'ON_SCREEN_STATE_CHANGE',
-          shouldHide = shouldBeHidden
+          shouldHide = shouldHide
         })
       end
     end
