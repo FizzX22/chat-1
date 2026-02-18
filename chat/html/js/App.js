@@ -277,6 +277,7 @@ window.APP = {
     },
     send(e) {
       if(this.message !== '') {
+        console.log('chat: posting chatResult message:', this.message);
         post('http://chat/chatResult', JSON.stringify({
           message: this.message,
         }));
@@ -289,7 +290,10 @@ window.APP = {
     },
     hideInput(canceled = false) {
       if (canceled) {
+        console.log('chat: posting chatResult canceled');
         post('http://chat/chatResult', JSON.stringify({ canceled }));
+      } else {
+        console.log('chat: hiding input');
       }
       this.message = '';
       this.showInput = false;

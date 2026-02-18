@@ -108,8 +108,19 @@ AddEventHandler('chat:setTheme', function(themeName)
 end)
 
 RegisterNUICallback('chatResult', function(data, cb)
+  -- Debug: indicate we received chatResult
+  print('[chat] RegisterNUICallback chatResult received, canceled=' .. tostring(data.canceled))
+  TriggerEvent('chat:addMessage', { args = { 'CHAT', 'chatResult received: ' .. tostring(data.canceled) } })
+
+  -- Ensure input flags and focus are always cleared to avoid freezing player
   chatInputActive = false
-  SetNuiFocus(false, false)
+  chatInputActivating = false
+
+  -- Try to release focus and cursor (call multiple forms defensively)
+  local ok1, err1 = pcall(function() SetNuiFocus(false, false) end)
+  local ok2, err2 = pcall(function() SetNuiFocus(false) end)
+  print('[chat] SetNuiFocus results: ' .. tostring(ok1) .. ', ' .. tostring(ok2))
+  TriggerEvent('chat:addMessage', { args = { 'CHAT', 'SetNuiFocus results: ' .. tostring(ok1) .. ', ' .. tostring(ok2) } })
 
   if not data.canceled then
     local id = PlayerId()
@@ -117,8 +128,16 @@ RegisterNUICallback('chatResult', function(data, cb)
     --deprecated
     local r, g, b = 0, 0x99, 255
 
-    if data.message:sub(1, 1) == '/' then
-      ExecuteCommand(data.message:sub(2))
+    if data.message and data.message:sub(1, 1) == '/' then
+      -- protect ExecuteCommand from throwing and ensure focus released
+      local ok, err = pcall(function()
+        ExecuteCommand(data.message:sub(2))
+      end)
+      if not ok then
+        TriggerEvent('chat:addMessage', {
+          args = { 'Chat', 'Command execution error: ' .. tostring(err) }
+        })
+      end
     else
       TriggerServerEvent('_chat:messageEntered', GetPlayerName(id), { r, g, b }, data.message)
     end
