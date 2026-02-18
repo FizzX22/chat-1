@@ -24,7 +24,9 @@ window.APP = {
     window.removeEventListener('message', this.listener);
   },
   mounted() {
+    // Notify Lua that the chat UI is loaded and ready
     post('http://chat/loaded', JSON.stringify({}));
+    
     this.initializeTheme();
     this.listener = window.addEventListener('message', (event) => {
       const item = event.data || event.detail; //'detail' is for debuging via browsers
@@ -289,12 +291,13 @@ window.APP = {
       }
     },
     hideInput(canceled = false) {
-      if (canceled) {
-        console.log('chat: posting chatResult canceled');
-        post('http://chat/chatResult', JSON.stringify({ canceled }));
-      } else {
-        console.log('chat: hiding input');
-      }
+      // Always send chatResult to close the chat in Lua
+      console.log('chat: posting chatResult', { canceled: !!canceled });
+      post('http://chat/chatResult', JSON.stringify({ 
+        canceled: !!canceled,
+        message: canceled ? null : this.message
+      }));
+      
       this.message = '';
       this.showInput = false;
       clearInterval(this.focusTimer);

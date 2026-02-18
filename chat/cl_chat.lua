@@ -108,24 +108,26 @@ AddEventHandler('chat:setTheme', function(themeName)
 end)
 
 RegisterNUICallback('chatResult', function(data, cb)
-  print('[chat] chatResult received, message: ' .. tostring(data.message) .. ', canceled: ' .. tostring(data.canceled))
+  print('[chat] chatResult received - message: ' .. tostring(data.message) .. ', canceled: ' .. tostring(data.canceled))
   
-  -- Immediately release input focus
+  -- Always close the chat input when we get this callback
   chatInputActive = false
+  chatInputActivating = false
   SetNuiFocus(false, false)
 
-  if not data.canceled then
+  -- If not canceled, process the message
+  if not data.canceled and data.message then
     local id = PlayerId()
     local r, g, b = 0, 0x99, 255
 
-    if data.message and data.message:sub(1, 1) == '/' then
+    if data.message:sub(1, 1) == '/' then
       -- Execute command
       local ok, err = pcall(function()
         ExecuteCommand(data.message:sub(2))
       end)
       if not ok then
         TriggerEvent('chat:addMessage', {
-          args = { 'Chat', 'Command execution error: ' .. tostring(err) }
+          args = { 'Chat', 'Command error: ' .. tostring(err) }
         })
       end
     else
@@ -137,25 +139,16 @@ RegisterNUICallback('chatResult', function(data, cb)
   cb('ok')
 end)
 
--- Handle postMessage events from NUI (alternative communication method for reliability)
+-- Alternative handler for postMessage events (backup communication method)
 RegisterNUICallback('message', function(data, cb)
   if data.action == 'loaded' then
-    print('[chat] NUI loaded via postMessage')
+    print('[chat] Chat UI loaded event detected')
     TriggerServerEvent('chat:init')
     chatLoaded = true
   elseif data.action == 'chatResult' then
-    print('[chat] chatResult via postMessage - delegating to chatResult handler')
-    -- Delegate to main chatResult handler
+    print('[chat] Chat close event detected via postMessage')
     chatInputActive = false
     SetNuiFocus(false, false)
-    if data.data and not data.data.canceled and data.data.message then
-      local id = PlayerId()
-      if data.data.message:sub(1, 1) == '/' then
-        ExecuteCommand(data.data.message:sub(2))
-      else
-        TriggerServerEvent('_chat:messageEntered', GetPlayerName(id), { 0, 0x99, 255 }, data.data.message)
-      end
-    end
   end
   cb('ok')
 end)
@@ -252,16 +245,11 @@ AddEventHandler('onClientResourceStop', function(resName)
 end)
 
 RegisterNUICallback('loaded', function(data, cb)
-  TriggerServerEvent('chat:init');
-
+  print('[chat] Chat UI loaded and ready')
+  TriggerServerEvent('chat:init')
   refreshCommands()
   refreshThemes()
-
   chatLoaded = true
-  
-  -- Print info message
-  notifyPlayer('Chat loaded and ready | Theme: '..currentTheme, 'system')
-
   cb('ok')
 end)
 
