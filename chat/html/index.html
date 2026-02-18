@@ -96,10 +96,25 @@
   <!-- Main Entry -->
   <script type="text/javascript">
   window.post = (url, data) => {
-    var request = new XMLHttpRequest();
-    request.open('POST', url, true);
-    request.setRequestHeader('Content-Type', 'application/json; charset=UTF-8');
-    request.send(data);
+    // Extract callback name from URL path
+    const callbackPath = url.split('/').pop(); // gets 'loaded' or 'chatResult'
+    const fxnuiUrl = `https://cfx-nui-chat/${callbackPath}`;
+    
+    // Use fetch with timeout for NUI callbacks
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    fetch(fxnuiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: data || '{}',
+      signal: controller.signal
+    }).catch(err => {
+      console.warn('Chat callback error:', callbackPath, err);
+      // Non-blocking error - continue execution
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
   }
 
   const instance = new Vue({
